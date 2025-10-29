@@ -1,66 +1,30 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC20/IERC20.sol";
+import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC20/ERC20.sol";
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/access/Ownable.sol";
 
-contract ChainSave is Ownable {
-    IERC20 public usdt;
-    uint256 public totalLocked;
-    uint256 public bonusPool;
-    uint256 public constant FEE_RATE = 50; // 0.5%
-    uint256 public constant PENALTY_RATE = 100; // 1%
+contract ChainSaveToken is ERC20, Ownable {
+    address public constant TAX_ADDRESS = 0xBCe5E715350CACa11d1826e172FA8ba083C17c69;
+    uint256 public constant TAX_RATE = 100; // 1% = 100 / 10000
 
-    struct Challenge {
-        uint256 targetAmount;
-        uint256 deposited;
-        uint256 startTime;
-        uint256 durationDays;
-        bool completed;
+    constructor(address initialOwner) ERC20("ChainSave Token", "SAVE") Ownable(initialOwner) {
+        _mint(msg.sender, 1000000000 * 10 ** decimals()); // 1,000,000,000 SAVE
     }
 
-    mapping(address => Challenge) public challenges;
+    function _update(address from, address to, uint256 amount) internal override {
+        if (from == address(0) || to == address(0)) {
+            // mint 或 burn，不扣税
+            super._update(from, to, amount);
+            return;
+        }
 
-    constructor(address _usdt, address initialOwner) Ownable(initialOwner) {
-        usdt = IERC20(_usdt);
-    }
+        uint256 tax = (amount * TAX_RATE) / 10000;
+        uint256 netAmount = amount - tax;
 
-    function createChallenge(uint256 targetAmount, uint256 durationDays) external {
-        require(targetAmount > 0, "Amount > 0");
-        require(durationDays > 0, "Days > 0");
-
-        Challenge storage c = challenges[msg.sender];
-        require(c.deposited == 0, "Challenge exists");
-
-        usdt.transferFrom(msg.sender, address(this), targetAmount);
-        totalLocked += targetAmount;
-
-        c.targetAmount = targetAmount;
-        c.deposited = targetAmount;
-        c.startTime = block.timestamp;
-        c.durationDays = durationDays;
-        c.completed = false;
-    }
-
-    function completeChallenge() external {
-        Challenge storage c = challenges[msg.sender];
-        require(c.deposited > 0, "No challenge");
-        require(block.timestamp >= c.startTime + c.durationDays * 1 days, "Not ended");
-
-        uint256 fee = c.targetAmount * FEE_RATE / 10000;
-        uint256 penalty = c.targetAmount * PENALTY_RATE / 10000;
-        uint256 payout = c.targetAmount - fee - penalty;
-
-        bonusPool += penalty;
-        totalLocked -= c.targetAmount;
-
-        usdt.transfer(msg.sender, payout);
-        usdt.transfer(owner(), fee);
-
-        c.completed = true;
-    }
-
-    function emergencyWithdraw() external onlyOwner {
-        usdt.transfer(owner(), usdt.balanceOf(address(this)));
+        if (tax > 0) {
+            super._update(from, TAX_ADDRESS, tax);
+        }
+        super._update(from, to, netAmount);
     }
 }
