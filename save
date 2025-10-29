@@ -1,0 +1,24 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+contract ChainSaveToken is ERC20, Ownable {
+    address public constant TAX_ADDRESS = 0xBCe5E715350CACa11d1826e172FA8ba083C17c69;
+    uint256 public constant TAX_RATE = 100; // 1% = 100 / 10000
+
+    constructor() ERC20("ChainSave Token", "SAVE") Ownable(msg.sender) {
+        _mint(msg.sender, 1000000000 * 10 ** decimals()); // 总供应量 1,000,000,000 SAVE
+    }
+
+    function _transfer(address from, address to, uint256 amount) internal override {
+        uint256 tax = (amount * TAX_RATE) / 10000;
+        uint256 netAmount = amount - tax;
+
+        if (tax > 0) {
+            super._transfer(from, TAX_ADDRESS, tax);
+        }
+        super._transfer(from, to, netAmount);
+    }
+}
